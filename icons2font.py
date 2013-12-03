@@ -426,7 +426,7 @@ def main():
         glyph_files,
         output_dir,
         font_name+"-designer",
-        glyph_name=lambda i:chr(i+ord(DESIGNER_FONT_START_CHAR))
+        glyph_name=lambda i:htmlhex(i + USER_AREA)
     )
 
     # get file hash
