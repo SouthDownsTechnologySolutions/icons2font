@@ -352,11 +352,7 @@ def gen_svg_font(glyph_files, output_dir, font_name, glyph_name):
     index = 0
     #current = ord("a")
     for f in glyph_files:
-        #glyphname = font_name + "-" + f.replace(".svg","").replace("_","-").replace(" ","-").lower()
-        glyphname = htmlhex(index)
-
         data = open(f).read()
-        #artname = chr(current)
         do_glyph(data, glyph_name(index), svg)
 
         index += 1
@@ -426,7 +422,7 @@ def main():
         glyph_files,
         output_dir,
         font_name+"-designer",
-        glyph_name=lambda i:htmlhex(i + USER_AREA)
+        glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR))
     )
 
     # get file hash
