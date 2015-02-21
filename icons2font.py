@@ -363,7 +363,7 @@ def gen_svg_font(glyph_files, output_dir, font_name, glyph_name):
 
 
 def gen_css_for_font(glyph_files, output_dir, font_name, hash):
-    css = open(output_dir + font_name + ".css",'w')
+    css = open(output_dir + font_name + ".scss",'w')
     css.write(CSS_HEADER.format(font_name, hash))
 
     for index, f in enumerate(glyph_files):
