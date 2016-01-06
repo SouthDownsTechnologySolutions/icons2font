@@ -438,8 +438,12 @@ def parse_args():
     transforms_group.add_argument("--scale-all", default=1, action='store', type=float, help="Amount by which to scale all glyphs")
     transforms_group.add_argument("--translate-y-all", default=0, action='store', type=float, help="Amount by which to offset all glyphs on the Y axis. What are the units? That's for you to find out.")
 
-    transforms_group.add_argument("--scale-one", nargs=2, action='append', default=[], help="'--scale-one airplane 2' would scale the 'airplane' glyph 2x. Can be used more than once.")
-    transforms_group.add_argument("--translate-y-one", nargs=2, action='append', default=[], help="'--translate-y-one airplane 5' would move the 'airplane' glyph down 5 units. Can be used more than once.")
+    transforms_group.add_argument(
+        "--scale-one", nargs=2, action='append', default=[],
+        help="'--scale-one airplane 2' would scale the 'airplane' glyph 2x. Can be used more than once. This will _replace_ the global scale value for this glyph.")
+    transforms_group.add_argument(
+        "--translate-y-one", nargs=2, action='append', default=[],
+        help="'--translate-y-one airplane 5' would move the 'airplane' glyph down 5 units. Can be used more than once. This will _replace_ the global translate-y value for this glyph.")
 
     formats_group = parser.add_argument_group('Formats', 'Enable or disable individual formats. All are enabled by default.')
 
