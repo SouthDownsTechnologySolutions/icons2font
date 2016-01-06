@@ -273,9 +273,10 @@ def compute_minrec():
     sizey = maxy - miny
 
 
-def do_glyph(data, glyphname, svg):
+def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
     """ converts a file into a svg glyph """
 
+    local_gsize = GSIZE * scale
 
     viewBox, paths = svg_paths(data)
     # font needs to be of one path
@@ -287,12 +288,14 @@ def do_glyph(data, glyphname, svg):
     trany = -trany
 
     size = max(sizex, sizey)
-    scale = GSIZE/size
+    scale = local_gsize/size
 
     if size - sizey > 0:
         trany += (size - sizey)/2
     if size - sizex > 0:
         tranx += (size - sizex)/2
+
+    trany += translate_y
 
     #print "translate", tranx, trany, "scale", scale
 
@@ -319,14 +322,14 @@ def do_glyph(data, glyphname, svg):
                         command[i] += tranx * scale
                     elif op == "V":
                         command[i] *= -scale
-                        command[i] += -trany * scale + GSIZE
+                        command[i] += -trany * scale + local_gsize
                     else:
                         if i % 2 == 1:
                             command[i] *= scale
                             command[i] += tranx * scale
                         else:
                             command[i] *= -scale
-                            command[i] += -trany * scale + GSIZE
+                            command[i] += -trany * scale + local_gsize
                 else:
                     if op in "h":
                         command[i] *= scale
@@ -340,7 +343,7 @@ def do_glyph(data, glyphname, svg):
         # special case for first relative m (its just like abs M)
         if op == "m" and prev_op == None:
             command[1] += tranx * scale
-            command[2] += -trany * scale + GSIZE
+            command[2] += -trany * scale + local_gsize
         prev_op = op
 
     #commands.insert(0, ['M', tranx*scale, -trany*scale])
@@ -352,7 +355,7 @@ def do_glyph(data, glyphname, svg):
 
     #svg.write(GLYPH.format(glyphname, path))
 
-def gen_svg_font(glyph_files, output_path, font_name, glyph_name):
+def gen_svg_font(glyph_files, output_path, font_name, glyph_name, scale=1.0, translate_y=0.0):
     svg = open(output_path, 'w')
     svg.write(HEADER.format(font_name))
 
@@ -361,7 +364,7 @@ def gen_svg_font(glyph_files, output_path, font_name, glyph_name):
     #current = ord("a")
     for f in glyph_files:
         data = open(f).read()
-        do_glyph(data, glyph_name(index), svg)
+        do_glyph(data, glyph_name(index), svg, scale=scale, translate_y=translate_y)
 
         index += 1
 
@@ -418,7 +421,12 @@ def parse_args():
 
     parser.add_argument('--ignore', action='append', default=[], help="Ignore a glyph. Do not include the .svg extension. May pass more than once.")
 
-    formats_group = parser.add_argument_group('Formats', 'Enable and disable individual formats. All are enabled by default.')
+    transforms_group = parser.add_argument_group("Transforms", "Translate and scale glyphs")
+
+    transforms_group.add_argument("--scale-all", default=1, action='store', type=float, help="Amount by which to scale all glyphs")
+    transforms_group.add_argument("--translate-y-all", default=0, action='store', type=float, help="Amount by which to offset all glyphs on the Y axis. What are the units? That's for you to find out.")
+
+    formats_group = parser.add_argument_group('Formats', 'Enable or disable individual formats. All are enabled by default.')
 
     for fmt in ('scss', 'html', 'woff', 'otf', 'eot'):
         formats_group.add_argument('--' + fmt, action='store_true', default=True, help='Generate {} files for fonts'.format(fmt.upper()))
@@ -474,7 +482,9 @@ def main():
         glyph_files,
         os.path.join(output_dir, font_name + '.svg'),
         font_name,
-        glyph_name=lambda i:htmlhex(i + USER_AREA)
+        glyph_name=lambda i:htmlhex(i + USER_AREA),
+        scale=args.scale_all,
+        translate_y=args.translate_y_all,
     )
 
     if args.scss:
