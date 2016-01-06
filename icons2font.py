@@ -1,7 +1,16 @@
-import sys
-import os
-from xml.dom import minidom
+#!/usr/bin/env python2.7
+
+import argparse
+import logging
 import md5
+import os
+import sys
+
+from xml.dom import minidom
+
+import fontforge
+
+log = logging.getLogger(__name__)
 
 DESIGNER_FONT_START_CHAR = "A"
 GSIZE = 1400
@@ -343,9 +352,8 @@ def do_glyph(data, glyphname, svg):
 
     #svg.write(GLYPH.format(glyphname, path))
 
-def gen_svg_font(glyph_files, output_dir, font_name, glyph_name):
-
-    svg = open(output_dir + font_name + ".svg",'w')
+def gen_svg_font(glyph_files, output_path, font_name, glyph_name):
+    svg = open(output_path, 'w')
     svg.write(HEADER.format(font_name))
 
     # use the special unicode user area for char encoding
@@ -361,21 +369,25 @@ def gen_svg_font(glyph_files, output_dir, font_name, glyph_name):
     svg.flush()
     svg.close()
 
+    log.info("Generated {}".format(output_path))
 
-def gen_css_for_font(glyph_files, output_dir, font_name, hash):
-    css = open(output_dir + font_name + ".scss",'w')
-    css.write(CSS_HEADER.format(font_name, hash))
+
+def gen_scss_for_font(glyph_files, output_path, font_name, hash):
+    scss = open(output_path,'w')
+    scss.write(CSS_HEADER.format(font_name, hash))
 
     for index, f in enumerate(glyph_files):
         glyph_name = font_name + "-" + f.split("/")[-1].replace(".svg", "")
-        css.write(
+        scss.write(
             '.{0}:before {{\n    content: "\{1:04x}";\n}}\n'.format(
                 glyph_name,
                 USER_AREA + index))
 
+    log.info("Generated {}".format(output_path))
 
-def gen_html_for_font(glyph_files, output_dir, font_name):
-    doc = open(output_dir + font_name + ".html",'w')
+
+def gen_html_for_font(glyph_files, output_path, font_name):
+    doc = open(output_path,'w')
     doc.write(DOC_HEADER.format(font_name))
 
     for index, f in enumerate(glyph_files):
@@ -386,74 +398,137 @@ def gen_html_for_font(glyph_files, output_dir, font_name):
 
     doc.write(DOC_FOOTER.format(font_name))
 
+    log.info("Generated {}".format(output_path))
 
-def main():
-    input_dir = sys.argv[1]
-    output_dir = sys.argv[2]
-    font_name = "icon"
-    if len(sys.argv) > 3:
-        font_name = sys.argv[3]
 
-    if not output_dir.endswith("/"):
-        output_dir = output_dir + "/"
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Convert a folder of SVG files into several font formats')
+    parser.add_argument(
+        "input_dir", action="store", help="Path to a folder of SVG files")
+    parser.add_argument(
+        "output_dir", action="store", help="Path to a folder to put output files in")
+    parser.add_argument(
+        "font_name", default="icon", action="store", help="Output file name *and* font name. Defaults to 'icon'.")
 
-    # make sure output dir exists
-    try:
-       os.makedirs(output_dir)
-    except:
-       pass
+    parser.add_argument('-v', '--verbose', action='count', help="Add one for info logging, add another for debug logging")
 
+    parser.add_argument('--designer', action='store_true', default=True, help='(default) Generate "designer" variant (uses ASCII range instead of user extension range)')
+    parser.add_argument('--no-designer', action='store_false', dest='designer', help="Don't generate \"designer\" variant")
+
+    parser.add_argument('--ignore', action='append', default=[], help="Ignore a glyph. Do not include the .svg extension. May pass more than once.")
+
+    formats_group = parser.add_argument_group('Formats', 'Enable and disable individual formats. All are enabled by default.')
+
+    for fmt in ('scss', 'html', 'woff', 'otf', 'eot'):
+        formats_group.add_argument('--' + fmt, action='store_true', default=True, help='Generate {} files for fonts'.format(fmt.upper()))
+        formats_group.add_argument('--no-' + fmt, action='store_false', dest=fmt, help="Don't generate {} files for fonts".format(fmt.upper()))
+
+    return parser.parse_args()
+
+
+def configure_logging(level=0):
+    log_level = logging.WARNING
+    if level == 1:
+        log_level = logging.INFO
+    elif level > 1:
+        log_level = logging.DEBUG
+    logging.basicConfig(format='%(message)s', level=log_level)
+
+
+def get_glyph_file_paths(input_dir, ignore):
+    ignore = set(ignore)
     glyph_files = []
     for f in sorted(os.listdir(input_dir)):
         if not f.endswith(".svg"):
             continue
-        glyph_files.append(input_dir+"/"+f)
+        glyph_name = os.path.splitext(f)[0]
+        if glyph_name in ignore:
+            log.info("Ignoring glyph {}".format(glyph_name))
+            continue
+        path = os.path.join(input_dir, f)
+        glyph_files.append(path)
+        log.debug("Including file {}".format(path))
+    return glyph_files
+
+
+def main():
+    args = parse_args()
+    configure_logging(args.verbose)
+
+    input_dir = args.input_dir
+    output_dir = args.output_dir
+    font_name = args.font_name
+    designer_font_name = font_name + '-designer'
+
+    # make sure output dir exists
+    try:
+       os.makedirs(output_dir)
+    except OSError:
+       pass
+
+    glyph_files = get_glyph_file_paths(args.input_dir, args.ignore)
 
     # generate browser svg font
     gen_svg_font(
         glyph_files,
-        output_dir,
+        os.path.join(output_dir, font_name + '.svg'),
         font_name,
         glyph_name=lambda i:htmlhex(i + USER_AREA)
     )
 
-    # generate designer svg font
-    gen_svg_font(
-        glyph_files,
-        output_dir,
-        font_name+"-designer",
-        glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR))
-    )
+    if args.scss:
+        # get file hash
+        svg_font_hash = md5.new(open(os.path.join(output_dir, font_name+".svg")).read()).hexdigest()[:5]
 
-    # get file hash
-    hash = md5.new(open(output_dir+font_name+".svg").read()).hexdigest()[:5]
+        # generate scss
+        gen_scss_for_font(
+            glyph_files,
+            os.path.join(output_dir, font_name + ".scss"),
+            font_name,
+            svg_font_hash
+        )
 
-    # generate css
-    gen_css_for_font(
-        glyph_files,
-        output_dir,
-        font_name,
-        hash
-    )
-
-    # generate sample html
-    gen_html_for_font(
-        glyph_files,
-        output_dir,
-        font_name
-    )
+    if args.html:
+        # generate sample html
+        gen_html_for_font(
+            glyph_files,
+            os.path.join(output_dir, font_name + ".html"),
+            font_name
+        )
 
     # make ttf, woff, off, and eot browser fonts
-    import fontforge
-    font = fontforge.open(output_dir + font_name + ".svg")
-    font.generate(output_dir + font_name + ".ttf")
-    font.generate(output_dir + font_name + ".woff")
-    font.generate(output_dir + font_name + ".otf")
-    os.system("ttf2eot {0}.ttf > {0}.eot".format(output_dir + font_name))
+    font = fontforge.open(os.path.join(output_dir, font_name + ".svg"))
 
-    # make designer ttf
-    font = fontforge.open(output_dir + font_name + "-designer.svg")
-    font.generate(output_dir + font_name + "-designer.ttf")
+    ttf_path = os.path.join(output_dir, font_name + ".ttf")
+    font.generate(ttf_path)
+    log.info("Generated {}".format(ttf_path))
+
+    if args.woff:
+        path = os.path.join(output_dir, font_name + ".woff")
+        font.generate(path)
+        log.info("Generated {}".format(path))
+    if args.otf:
+        path = os.path.join(output_dir, font_name + ".otf")
+        font.generate(path)
+        log.info("Generated {}".format(path))
+    if args.eot:
+        eot_path = os.path.join(output_dir, font_name + '.eot')
+        os.system("ttf2eot {0} > {1}".format(ttf_path, eot_path))
+        log.info("Generated {}".format(eot_path))
+
+    if args.designer:
+        gen_svg_font(
+            glyph_files,
+            os.path.join(output_dir, designer_font_name + '.svg'),
+            font_name+"-designer",
+            glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR))
+        )
+
+        font = fontforge.open(os.path.join(output_dir, font_name + "-designer.svg"))
+        path = os.path.join(output_dir, font_name + "-designer.ttf")
+        font.generate(path)
+        log.info("Generated {}".format(path))
 
 
 if __name__ == "__main__":
