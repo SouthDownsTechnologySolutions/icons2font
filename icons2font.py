@@ -358,7 +358,7 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
 def gen_svg_font(
         glyph_files, output_path, font_name, glyph_name,
         scale=1.0, translate_y=0.0,
-        scale_overrides={}, translate_y_overrides=0):
+        scale_overrides={}, translate_y_overrides={}):
     svg = open(output_path, 'w')
     svg.write(HEADER.format(font_name))
 
@@ -368,14 +368,17 @@ def gen_svg_font(
     for f in glyph_files:
         glyph_friendly_name = os.path.splitext(os.path.split(f)[1])[0]
         data = open(f).read()
+
         glyph_scale = scale
         if glyph_friendly_name in scale_overrides:
             glyph_scale = scale_overrides[glyph_friendly_name]
-            log.debug("Using scale override {}={}".format(glyph_friendly_name, glyph_scale))
-        glyph_translate_y = scale
+        log.debug("Using scale {}={}".format(glyph_friendly_name, glyph_scale))
+
+        glyph_translate_y = translate_y
         if glyph_friendly_name in translate_y_overrides:
             glyph_translate_y = translate_y_overrides[glyph_friendly_name]
-            log.debug("Using translate Y override {}={}".format(glyph_friendly_name, glyph_translate_y))
+        log.debug("Using translate Y {}={}".format(glyph_friendly_name, glyph_translate_y))
+
         do_glyph(data, glyph_name(index), svg, scale=glyph_scale, translate_y=glyph_translate_y)
 
         index += 1
