@@ -355,7 +355,10 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
 
     #svg.write(GLYPH.format(glyphname, path))
 
-def gen_svg_font(glyph_files, output_path, font_name, glyph_name, scale=1.0, translate_y=0.0):
+def gen_svg_font(
+        glyph_files, output_path, font_name, glyph_name,
+        scale=1.0, translate_y=0.0,
+        scale_overrides={}, translate_y_overrides=0):
     svg = open(output_path, 'w')
     svg.write(HEADER.format(font_name))
 
@@ -363,8 +366,17 @@ def gen_svg_font(glyph_files, output_path, font_name, glyph_name, scale=1.0, tra
     index = 0
     #current = ord("a")
     for f in glyph_files:
+        glyph_friendly_name = os.path.splitext(os.path.split(f)[1])[0]
         data = open(f).read()
-        do_glyph(data, glyph_name(index), svg, scale=scale, translate_y=translate_y)
+        glyph_scale = scale
+        if glyph_friendly_name in scale_overrides:
+            glyph_scale = scale_overrides[glyph_friendly_name]
+            log.debug("Using scale override {}={}".format(glyph_friendly_name, glyph_scale))
+        glyph_translate_y = scale
+        if glyph_friendly_name in translate_y_overrides:
+            glyph_translate_y = translate_y_overrides[glyph_friendly_name]
+            log.debug("Using translate Y override {}={}".format(glyph_friendly_name, glyph_translate_y))
+        do_glyph(data, glyph_name(index), svg, scale=glyph_scale, translate_y=glyph_translate_y)
 
         index += 1
 
@@ -419,12 +431,15 @@ def parse_args():
     parser.add_argument('--designer', action='store_true', default=True, help='(default) Generate "designer" variant (uses ASCII range instead of user extension range)')
     parser.add_argument('--no-designer', action='store_false', dest='designer', help="Don't generate \"designer\" variant")
 
-    parser.add_argument('--ignore', action='append', default=[], help="Ignore a glyph. Do not include the .svg extension. May pass more than once.")
+    parser.add_argument('--ignore', action='append', default=[], help="Ignore a glyph. Do not include the .svg extension. Can be used more than once.")
 
     transforms_group = parser.add_argument_group("Transforms", "Translate and scale glyphs")
 
     transforms_group.add_argument("--scale-all", default=1, action='store', type=float, help="Amount by which to scale all glyphs")
     transforms_group.add_argument("--translate-y-all", default=0, action='store', type=float, help="Amount by which to offset all glyphs on the Y axis. What are the units? That's for you to find out.")
+
+    transforms_group.add_argument("--scale-one", nargs=2, action='append', default=[], help="'--scale-one airplane 2' would scale the 'airplane' glyph 2x. Can be used more than once.")
+    transforms_group.add_argument("--translate-y-one", nargs=2, action='append', default=[], help="'--translate-y-one airplane 5' would move the 'airplane' glyph down 5 units. Can be used more than once.")
 
     formats_group = parser.add_argument_group('Formats', 'Enable or disable individual formats. All are enabled by default.')
 
@@ -464,6 +479,17 @@ def main():
     args = parse_args()
     configure_logging(args.verbose)
 
+    scale_overrides = {
+        name: float(amt) for (name, amt) in args.scale_one
+    }
+
+    translate_y_overrides = {
+        name: float(amt) for (name, amt) in args.translate_y_one
+    }
+
+    log.info("Scale overrides: {}".format(scale_overrides))
+    log.info("Translate Y overrides: {}".format(translate_y_overrides))
+
     input_dir = args.input_dir
     output_dir = args.output_dir
     font_name = args.font_name
@@ -485,6 +511,8 @@ def main():
         glyph_name=lambda i:htmlhex(i + USER_AREA),
         scale=args.scale_all,
         translate_y=args.translate_y_all,
+        scale_overrides=scale_overrides,
+        translate_y_overrides=translate_y_overrides
     )
 
     if args.scss:
@@ -532,7 +560,11 @@ def main():
             glyph_files,
             os.path.join(output_dir, designer_font_name + '.svg'),
             font_name+"-designer",
-            glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR))
+            glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
+            scale=args.scale_all,
+            translate_y=args.translate_y_all,
+            scale_overrides=scale_overrides,
+            translate_y_overrides=translate_y_overrides
         )
 
         font = fontforge.open(os.path.join(output_dir, font_name + "-designer.svg"))
