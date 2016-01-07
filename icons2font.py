@@ -495,13 +495,11 @@ def main():
     log.info("Scale overrides: {}".format(scale_overrides))
     log.info("Translate Y overrides: {}".format(translate_y_overrides))
 
-    input_dir = args.input_dir
-    output_dir = args.output_dir
     designer_font_name = args.font_name + '-designer'
 
     # make sure output dir exists
     try:
-       os.makedirs(output_dir)
+       os.makedirs(args.output_dir)
     except OSError:
        pass
 
@@ -510,7 +508,7 @@ def main():
     # generate browser svg font
     gen_svg_font(
         glyph_files,
-        os.path.join(output_dir, args.font_name + '.svg'),
+        os.path.join(args.output_dir, args.font_name + '.svg'),
         args.font_name,
         glyph_name=lambda i:htmlhex(i + USER_AREA),
         scale=args.scale_all,
@@ -521,12 +519,12 @@ def main():
 
     if args.scss:
         # get file hash
-        svg_font_hash = md5.new(open(os.path.join(output_dir, args.font_name+".svg")).read()).hexdigest()[:5]
+        svg_font_hash = md5.new(open(os.path.join(args.output_dir, args.font_name+".svg")).read()).hexdigest()[:5]
 
         # generate scss
         gen_scss_for_font(
             glyph_files,
-            os.path.join(output_dir, args.font_name + ".scss"),
+            os.path.join(args.output_dir, args.font_name + ".scss"),
             args.font_name,
             svg_font_hash
         )
@@ -535,34 +533,34 @@ def main():
         # generate sample html
         gen_html_for_font(
             glyph_files,
-            os.path.join(output_dir, args.font_name + ".html"),
+            os.path.join(args.output_dir, args.font_name + ".html"),
             args.font_name
         )
 
     # make ttf, woff, off, and eot browser fonts
-    font = fontforge.open(os.path.join(output_dir, args.font_name + ".svg"))
+    font = fontforge.open(os.path.join(args.output_dir, args.font_name + ".svg"))
 
-    ttf_path = os.path.join(output_dir, args.font_name + ".ttf")
+    ttf_path = os.path.join(args.output_dir, args.font_name + ".ttf")
     font.generate(ttf_path)
     log.info("Generated {}".format(ttf_path))
 
     if args.woff:
-        path = os.path.join(output_dir, args.font_name + ".woff")
+        path = os.path.join(args.output_dir, args.font_name + ".woff")
         font.generate(path)
         log.info("Generated {}".format(path))
     if args.otf:
-        path = os.path.join(output_dir, args.font_name + ".otf")
+        path = os.path.join(args.output_dir, args.font_name + ".otf")
         font.generate(path)
         log.info("Generated {}".format(path))
     if args.eot:
-        eot_path = os.path.join(output_dir, args.font_name + '.eot')
+        eot_path = os.path.join(args.output_dir, args.font_name + '.eot')
         os.system("ttf2eot {0} > {1}".format(ttf_path, eot_path))
         log.info("Generated {}".format(eot_path))
 
     if args.designer:
         gen_svg_font(
             glyph_files,
-            os.path.join(output_dir, designer_font_name + '.svg'),
+            os.path.join(args.output_dir, designer_font_name + '.svg'),
             designer_font_name,
             glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
             scale=args.scale_all,
@@ -571,8 +569,8 @@ def main():
             translate_y_overrides=translate_y_overrides
         )
 
-        font = fontforge.open(os.path.join(output_dir, designer_font_name + ".svg"))
-        path = os.path.join(output_dir, designer_font_name + ".ttf")
+        font = fontforge.open(os.path.join(args.output_dir, designer_font_name + ".svg"))
+        path = os.path.join(args.output_dir, designer_font_name + ".ttf")
         font.generate(path)
         log.info("Generated {}".format(path))
 
