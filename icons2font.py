@@ -423,6 +423,13 @@ def gen_html_for_font(glyph_files, output_path, font_name):
 
 
 def parse_args():
+    """
+    All of the boolean options have both an 'on' and an 'off' argument, which
+    defaults to 'on'. The only reason to have 'on' at all is so that you can
+    be very explicit about what you want, without worrying about whether the
+    defaults will change or whether you'll need to override it later.
+    """
+
     parser = argparse.ArgumentParser(
         description='Convert a folder of SVG files into several font formats')
     parser.add_argument(
