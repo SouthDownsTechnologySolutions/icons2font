@@ -111,17 +111,39 @@ COMMANDS_REL = COMMANDS_ABS.lower()
 COMMANDS = COMMANDS_ABS + COMMANDS_REL
 
 
-class Counter(object):
-    def __init__(self, initial_value):
-        super(Counter, self).__init__()
-        self.value = initial_value
+class GlyphNameMapper(object):
+    def __init__(self, character_mapping):
+        super(GlyphNameMapper, self).__init__()
+        self.character_mapping = character_mapping
+
+        self.used_values = set(self.character_mapping.viewvalues())
+        self.new_mappings = OrderedDict()
+        self.value = ord(max(self.used_values)) if len(self.used_values) else USER_AREA
 
     def advance(self):
         self.value += 1
 
-    def advance_to_value_not_in_set(self, the_set):
-        while self.value in the_set:
+    def advance_to_unused_value(self):
+        while self.value in self.used_values:
             self.advance()
+
+    def get_glyph_name(self, friendly_name):
+        if friendly_name in self.character_mapping:
+            return self.character_mapping[friendly_name]
+        else:
+            this_name = self.value
+            self.used_values.add(this_name)
+            self.advance_to_unused_value()
+            self.new_mappings[friendly_name] = unichr(this_name)
+            return self.new_mappings[friendly_name]
+
+    def log_new_mappings_if_necessary(self):
+        if len(self.character_mapping) and len(self.new_mappings):
+            log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(
+                '\n'.join([
+                    '"{}": "\\u{:x}",'.format(name, ord(char))
+                    for name, char in self.new_mappings.viewitems()
+                ])))
 
 
 def between(a, b, s):
@@ -371,29 +393,6 @@ def gen_html_for_font(glyph_files, output_path, font_name):
     log.info("Generated {}".format(output_path))
 
 
-def get_glyph_name(char_mapping, used_chars, name, next_char_counter, new_mappings):
-    """
-    char_mapping: dict of <name>: <char>
-    used_chars: set of <char>. MUTABLE
-    name: name of this glyph
-    next_char_counter: Counter object containing code point of next char we can
-                       use that isn't taken by existing chars. MUTABLE
-    new_mappings: dict (or OrderedDict) of <name>: <char> representing characters
-                  not included in char_mapping. Can be used to suggest changes
-                  to the character mapping file.
-
-    returns: char used for this glyph
-    """
-    if name in char_mapping:
-        return char_mapping[name]
-    else:
-        this_char_as_int = next_char_counter.value
-        new_mappings[name] = this_char_as_int
-        used_chars.add(this_char_as_int)
-        next_char_counter.advance_to_value_not_in_set(used_chars)
-        return unichr(this_char_as_int)
-
-
 def json_file_arg_type(path):
     try:
         with open(path, 'r') as f:
@@ -483,7 +482,7 @@ def main():
 
     scale_overrides = {name: float(amt) for (name, amt) in args.scale_one}
     translate_y_overrides = {name: float(amt) for (name, amt) in args.translate_y_one}
-    char_mapping = args.character_mapping or {}
+    glyph_name_mapper = GlyphNameMapper(args.character_mapping or {})
 
     log.info("Scale overrides: {}".format(scale_overrides))
     log.info("Translate Y overrides: {}".format(translate_y_overrides))
@@ -498,15 +497,8 @@ def main():
 
     glyph_files = get_glyph_file_paths(args.input_dir, args.ignore)
 
-    # the process for generating a "glyph name" (code point) is stateful because
-    # we want to obey the mapping and avoid collisions with previous glyphs.
-    used_chars = set(char_mapping.viewvalues())
-    initial_value = ord(max(used_chars)) if used_chars else USER_AREA
-    next_char_counter = Counter(initial_value)
-    new_mappings = OrderedDict()
-    def _get_glyph_name(name, i):
-        return htmlhex(ord(get_glyph_name(
-            char_mapping, used_chars, name, next_char_counter, new_mappings)))
+    def _get_glyph_name(friendly_name, i):
+        return htmlhex(ord(glyph_name_mapper.get_glyph_name(friendly_name)))
 
     # generate browser svg font
     gen_svg_font(
@@ -579,12 +571,7 @@ def main():
         font.generate(path)
         log.info("Generated {}".format(path))
 
-    if args.character_mapping and len(new_mappings):
-        log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(
-            '\n'.join([
-                '"{}": "\\u{:x}",'.format(name, char)
-                for name, char in new_mappings.viewitems()
-            ])))
+    glyph_name_mapper.log_new_mappings_if_necessary()
 
 
 if __name__ == "__main__":
