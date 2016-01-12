@@ -78,13 +78,6 @@ try out and <a href='{0}-designer.ttf'>download</a> desinger font
 </html>
 """
 
-#  src: url('{0}.eot');
-#  src: url('{0}.eot#iefix') format('embedded-opentype'),
-#       url('{0}.ttf') format('truetype'),
-#       url('{0}.woff') format('woff'),
-#       url('{0}.svg') format('svg'),
-#       url('{0}.otf') format("opentype");
-
 
 CSS_HEADER = """@font-face {{
   font-family: "{0}";
@@ -243,8 +236,6 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
 
     trany += translate_y
 
-    #print "translate", tranx, trany, "scale", scale
-
     prev_op = None
     for command in commands:
         op = command[0]
@@ -292,14 +283,9 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
             command[2] += -trany * scale + local_gsize
         prev_op = op
 
-    #commands.insert(0, ['M', tranx*scale, -trany*scale])
-
     path = compile_path(commands)
-    #print "final path", path
     svg.write(GLYPH.format(glyphname, path))
 
-
-    #svg.write(GLYPH.format(glyphname, path))
 
 def gen_svg_font(
         glyph_files, output_path, font_name, glyph_name,
@@ -313,7 +299,6 @@ def gen_svg_font(
 
     # use the special unicode user area for char encoding
     index = 0
-    #current = ord("a")
     for f in glyph_files:
         glyph_friendly_name = os.path.splitext(os.path.split(f)[1])[0]
         data = open(f).read()
