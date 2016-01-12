@@ -218,60 +218,6 @@ def compile_path(commands):
             buf.append(str(n))
     return " ".join(buf)
 
-def compute_minrec():
-    minx, miny, maxx, maxy = None, None, None, None
-    pen = [0,0]
-    rec = [None, None, None, None]
-    def min_rec():
-        # min rec calculate
-        if rec[0] is None or rec[0] > pen[0]: rec[0] = pen[0]
-        if rec[1] is None or rec[1] > pen[1]: rec[1] = pen[1]
-        if rec[2] is None or rec[2] < pen[0]: rec[2] = pen[0]
-        if rec[3] is None or rec[3] < pen[1]: rec[3] = pen[1]
-
-    for command in commands:
-        op = command[0]
-        print command
-        if op in "VvHhAa":
-            # account for the stupid direction commands
-            for n in command[1:]:
-                if op == "V":
-                    pen[0] = n
-                elif op == "v":
-                    pen[0] += n
-                if op == "H":
-                    pen[1] = n
-                elif op == "h":
-                    pen[1] += n
-                if op == "A":
-                    # arc command is insane
-                    pass
-                elif op == "a":
-                    # arc command is insane
-                    pass
-
-                min_rec()
-        else:
-            # all other commands
-            for p in range((len(command)-1)/2):
-                x = command[1+p*2]
-                y = command[2+p*2]
-                # move the pen
-                if op in COMMANDS_REL:
-                    pen[0] += x
-                    pen[1] += y
-                else:
-                    pen[0] = x
-                    pen[1] = y
-
-                min_rec()
-    print "min rectangle", rec
-    minx, miny, maxx, maxy = rec
-    tranx = -minx
-    trany = -miny
-    sizex = maxx - minx
-    sizey = maxy - miny
-
 
 def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
     """ converts a file into a svg glyph """
