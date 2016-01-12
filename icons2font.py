@@ -1,11 +1,13 @@
 #!/usr/bin/env python2.7
 
 import argparse
+import json
 import logging
 import md5
 import os
 import sys
 
+from collections import OrderedDict
 from xml.dom import minidom
 
 import fontforge
@@ -107,6 +109,20 @@ USER_AREA = 0xf000
 COMMANDS_ABS = "MZLHVCSQTA"
 COMMANDS_REL = COMMANDS_ABS.lower()
 COMMANDS = COMMANDS_ABS + COMMANDS_REL
+
+
+class Counter(object):
+    def __init__(self, initial_value):
+        super(Counter, self).__init__()
+        self.value = initial_value
+
+    def advance(self):
+        self.value += 1
+
+    def advance_to_value_not_in_set(self, the_set):
+        while self.value in the_set:
+            self.advance()
+
 
 def between(a, b, s):
     first = s.find(a)
@@ -288,7 +304,7 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
 
 
 def gen_svg_font(
-        glyph_files, output_path, font_name, glyph_name,
+        glyph_files, output_path, font_name, get_one_glyph_name,
         scale=1.0, translate_y=0.0,
         scale_overrides=None, translate_y_overrides=None):
     scale_overrides = scale_overrides or {}
@@ -313,7 +329,9 @@ def gen_svg_font(
             glyph_translate_y = translate_y_overrides[glyph_friendly_name]
         log.debug("Using translate Y {}={}".format(glyph_friendly_name, glyph_translate_y))
 
-        do_glyph(data, glyph_name(index), svg, scale=glyph_scale, translate_y=glyph_translate_y)
+        glyph_name = get_one_glyph_name(glyph_friendly_name, index)
+        do_glyph(
+            data, glyph_name, svg, scale=glyph_scale, translate_y=glyph_translate_y)
 
         index += 1
 
@@ -353,6 +371,39 @@ def gen_html_for_font(glyph_files, output_path, font_name):
     log.info("Generated {}".format(output_path))
 
 
+def get_glyph_name(char_mapping, used_chars, name, next_char_counter, new_mappings):
+    """
+    char_mapping: dict of <name>: <char>
+    used_chars: set of <char>. MUTABLE
+    name: name of this glyph
+    next_char_counter: Counter object containing code point of next char we can
+                       use that isn't taken by existing chars. MUTABLE
+    new_mappings: dict (or OrderedDict) of <name>: <char> representing characters
+                  not included in char_mapping. Can be used to suggest changes
+                  to the character mapping file.
+
+    returns: char used for this glyph
+    """
+    if name in char_mapping:
+        return char_mapping[name]
+    else:
+        this_char_as_int = next_char_counter.value
+        new_mappings[name] = this_char_as_int
+        used_chars.add(this_char_as_int)
+        next_char_counter.advance_to_value_not_in_set(used_chars)
+        return unichr(this_char_as_int)
+
+
+def json_file_arg_type(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except IOError:
+        raise argparse.ArgumentTypeError("File does not exist: {}".format(path))
+    except ValueError:
+        raise argparse.ArgumentTypeError("Invalid JSON: {}".format(path))
+
+
 def parse_args():
     """
     All of the boolean options have both an 'on' and an 'off' argument, which
@@ -369,6 +420,8 @@ def parse_args():
         "output_dir", action="store", help="Path to a folder to put output files in")
     parser.add_argument(
         "font_name", default="icon", action="store", help="Output file name *and* font name. Defaults to 'icon'.")
+
+    parser.add_argument('--character-mapping', action='store', type=json_file_arg_type, help='JSON file mapping SVG file name to the character its glyph occupies')
 
     parser.add_argument('-v', '--verbose', action='count', help="Add one for info logging, add another for debug logging")
 
@@ -424,11 +477,13 @@ def get_glyph_file_paths(input_dir, ignore):
 
 
 def main():
+    configure_logging(1)  # allow logging during parsing
     args = parse_args()
     configure_logging(args.verbose)
 
     scale_overrides = {name: float(amt) for (name, amt) in args.scale_one}
     translate_y_overrides = {name: float(amt) for (name, amt) in args.translate_y_one}
+    char_mapping = args.character_mapping or {}
 
     log.info("Scale overrides: {}".format(scale_overrides))
     log.info("Translate Y overrides: {}".format(translate_y_overrides))
@@ -443,12 +498,22 @@ def main():
 
     glyph_files = get_glyph_file_paths(args.input_dir, args.ignore)
 
+    # the process for generating a "glyph name" (code point) is stateful because
+    # we want to obey the mapping and avoid collisions with previous glyphs.
+    used_chars = set(char_mapping.viewvalues())
+    initial_value = ord(max(used_chars)) if used_chars else USER_AREA
+    next_char_counter = Counter(initial_value)
+    new_mappings = OrderedDict()
+    def _get_glyph_name(name, i):
+        return htmlhex(ord(get_glyph_name(
+            char_mapping, used_chars, name, next_char_counter, new_mappings)))
+
     # generate browser svg font
     gen_svg_font(
         glyph_files,
         os.path.join(args.output_dir, args.font_name + '.svg'),
         args.font_name,
-        glyph_name=lambda i:htmlhex(i + USER_AREA),
+        get_one_glyph_name=_get_glyph_name,
         scale=args.scale_all,
         translate_y=args.translate_y_all,
         scale_overrides=scale_overrides,
@@ -496,11 +561,13 @@ def main():
         log.info("Generated {}".format(eot_path))
 
     if args.designer:
+        def _get_designer_glyph_name(name, i):
+            return htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
         gen_svg_font(
             glyph_files,
             os.path.join(args.output_dir, designer_font_name + '.svg'),
             designer_font_name,
-            glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
+            get_one_glyph_name=_get_designer_glyph_name,
             scale=args.scale_all,
             translate_y=args.translate_y_all,
             scale_overrides=scale_overrides,
@@ -511,6 +578,13 @@ def main():
         path = os.path.join(args.output_dir, designer_font_name + ".ttf")
         font.generate(path)
         log.info("Generated {}".format(path))
+
+    if args.character_mapping and len(new_mappings):
+        log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(
+            '\n'.join([
+                '"{}": "\\u{:x}",'.format(name, char)
+                for name, char in new_mappings.viewitems()
+            ])))
 
 
 if __name__ == "__main__":
