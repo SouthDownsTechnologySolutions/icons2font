@@ -1,5 +1,18 @@
 #!/usr/bin/env python2.7
 
+"""
+Terminology:
+    glyph - the idea and the visual representation of it (both airplane, and
+            drawing-of-airplane)
+
+    Friendly name - name of the SVG file without the extension
+
+    glyph name - integer representing a Unicode code point to which a glyph
+                 will be assigned
+
+    character - glyph name converted to a str/char data type
+"""
+
 import argparse
 import json
 import logging
@@ -118,32 +131,29 @@ class GlyphNameMapper(object):
 
         self.used_values = set(self.character_mapping.viewvalues())
         self.new_mappings = OrderedDict()
-        self.value = ord(max(self.used_values)) if len(self.used_values) else USER_AREA
+        self.next_glyph_name = ord(max(self.used_values)) if len(self.used_values) else USER_AREA
 
-    def advance(self):
-        self.value += 1
-
-    def advance_to_unused_value(self):
-        while self.value in self.used_values:
-            self.advance()
+    def advance_to_unused_next_glyph_name(self):
+        while self.next_glyph_name in self.used_values:
+            self.next_glyph_name += 1
 
     def get_glyph_name(self, friendly_name):
         if friendly_name in self.character_mapping:
             return self.character_mapping[friendly_name]
         else:
-            this_name = self.value
+            this_name = self.next_glyph_name
             self.used_values.add(this_name)
-            self.advance_to_unused_value()
+            self.advance_to_unused_next_glyph_name()
             self.new_mappings[friendly_name] = unichr(this_name)
             return self.new_mappings[friendly_name]
 
     def log_new_mappings_if_necessary(self):
         if len(self.character_mapping) and len(self.new_mappings):
-            log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(
-                '\n'.join([
-                    '"{}": "\\u{:x}",'.format(name, ord(char))
-                    for name, char in self.new_mappings.viewitems()
-                ])))
+            suggested_additions = '\n'.join([
+                '"{}": "\\u{:x}",'.format(name, ord(char))
+                for name, char in self.new_mappings.viewitems()
+            ])
+            log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(suggested_additions))
 
 
 def between(a, b, s):
