@@ -1,11 +1,26 @@
 #!/usr/bin/env python2.7
 
+"""
+Terminology:
+    glyph - the idea and the visual representation of it (both airplane, and
+            drawing-of-airplane)
+
+    Friendly name - name of the SVG file without the extension
+
+    glyph name - integer representing a Unicode code point to which a glyph
+                 will be assigned
+
+    character - glyph name converted to a str/char data type
+"""
+
 import argparse
+import json
 import logging
 import md5
 import os
 import sys
 
+from collections import OrderedDict
 from xml.dom import minidom
 
 import fontforge
@@ -78,13 +93,6 @@ try out and <a href='{0}-designer.ttf'>download</a> desinger font
 </html>
 """
 
-#  src: url('{0}.eot');
-#  src: url('{0}.eot#iefix') format('embedded-opentype'),
-#       url('{0}.ttf') format('truetype'),
-#       url('{0}.woff') format('woff'),
-#       url('{0}.svg') format('svg'),
-#       url('{0}.otf') format("opentype");
-
 
 CSS_HEADER = """@font-face {{
   font-family: "{0}";
@@ -114,6 +122,39 @@ USER_AREA = 0xf000
 COMMANDS_ABS = "MZLHVCSQTA"
 COMMANDS_REL = COMMANDS_ABS.lower()
 COMMANDS = COMMANDS_ABS + COMMANDS_REL
+
+
+class GlyphNameMapper(object):
+    def __init__(self, character_mapping):
+        super(GlyphNameMapper, self).__init__()
+        self.character_mapping = character_mapping
+
+        self.used_values = set(self.character_mapping.viewvalues())
+        self.new_mappings = OrderedDict()
+        self.next_glyph_name = ord(max(self.used_values)) if len(self.used_values) else USER_AREA
+
+    def advance_to_unused_next_glyph_name(self):
+        while self.next_glyph_name in self.used_values:
+            self.next_glyph_name += 1
+
+    def get_glyph_name(self, friendly_name):
+        if friendly_name in self.character_mapping:
+            return self.character_mapping[friendly_name]
+        else:
+            this_name = self.next_glyph_name
+            self.used_values.add(this_name)
+            self.advance_to_unused_next_glyph_name()
+            self.new_mappings[friendly_name] = unichr(this_name)
+            return self.new_mappings[friendly_name]
+
+    def log_new_mappings_if_necessary(self):
+        if len(self.character_mapping) and len(self.new_mappings):
+            suggested_additions = '\n'.join([
+                '"{}": "\\u{:x}",'.format(name, ord(char))
+                for name, char in self.new_mappings.viewitems()
+            ])
+            log.info("Character mapping was missing some characters. Suggested additions:\n{}".format(suggested_additions))
+
 
 def between(a, b, s):
     first = s.find(a)
@@ -218,60 +259,6 @@ def compile_path(commands):
             buf.append(str(n))
     return " ".join(buf)
 
-def compute_minrec():
-    minx, miny, maxx, maxy = None, None, None, None
-    pen = [0,0]
-    rec = [None, None, None, None]
-    def min_rec():
-        # min rec calculate
-        if rec[0] is None or rec[0] > pen[0]: rec[0] = pen[0]
-        if rec[1] is None or rec[1] > pen[1]: rec[1] = pen[1]
-        if rec[2] is None or rec[2] < pen[0]: rec[2] = pen[0]
-        if rec[3] is None or rec[3] < pen[1]: rec[3] = pen[1]
-
-    for command in commands:
-        op = command[0]
-        print command
-        if op in "VvHhAa":
-            # account for the stupid direction commands
-            for n in command[1:]:
-                if op == "V":
-                    pen[0] = n
-                elif op == "v":
-                    pen[0] += n
-                if op == "H":
-                    pen[1] = n
-                elif op == "h":
-                    pen[1] += n
-                if op == "A":
-                    # arc command is insane
-                    pass
-                elif op == "a":
-                    # arc command is insane
-                    pass
-
-                min_rec()
-        else:
-            # all other commands
-            for p in range((len(command)-1)/2):
-                x = command[1+p*2]
-                y = command[2+p*2]
-                # move the pen
-                if op in COMMANDS_REL:
-                    pen[0] += x
-                    pen[1] += y
-                else:
-                    pen[0] = x
-                    pen[1] = y
-
-                min_rec()
-    print "min rectangle", rec
-    minx, miny, maxx, maxy = rec
-    tranx = -minx
-    trany = -miny
-    sizex = maxx - minx
-    sizey = maxy - miny
-
 
 def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
     """ converts a file into a svg glyph """
@@ -296,8 +283,6 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
         tranx += (size - sizex)/2
 
     trany += translate_y
-
-    #print "translate", tranx, trany, "scale", scale
 
     prev_op = None
     for command in commands:
@@ -346,17 +331,12 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
             command[2] += -trany * scale + local_gsize
         prev_op = op
 
-    #commands.insert(0, ['M', tranx*scale, -trany*scale])
-
     path = compile_path(commands)
-    #print "final path", path
     svg.write(GLYPH.format(glyphname, path))
 
 
-    #svg.write(GLYPH.format(glyphname, path))
-
 def gen_svg_font(
-        glyph_files, output_path, font_name, glyph_name,
+        glyph_files, output_path, font_name, get_one_glyph_name,
         scale=1.0, translate_y=0.0,
         scale_overrides=None, translate_y_overrides=None):
     scale_overrides = scale_overrides or {}
@@ -367,7 +347,6 @@ def gen_svg_font(
 
     # use the special unicode user area for char encoding
     index = 0
-    #current = ord("a")
     for f in glyph_files:
         glyph_friendly_name = os.path.splitext(os.path.split(f)[1])[0]
         data = open(f).read()
@@ -382,7 +361,9 @@ def gen_svg_font(
             glyph_translate_y = translate_y_overrides[glyph_friendly_name]
         log.debug("Using translate Y {}={}".format(glyph_friendly_name, glyph_translate_y))
 
-        do_glyph(data, glyph_name(index), svg, scale=glyph_scale, translate_y=glyph_translate_y)
+        glyph_name = get_one_glyph_name(glyph_friendly_name, index)
+        do_glyph(
+            data, glyph_name, svg, scale=glyph_scale, translate_y=glyph_translate_y)
 
         index += 1
 
@@ -422,6 +403,16 @@ def gen_html_for_font(glyph_files, output_path, font_name):
     log.info("Generated {}".format(output_path))
 
 
+def json_file_arg_type(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except IOError:
+        raise argparse.ArgumentTypeError("File does not exist: {}".format(path))
+    except ValueError:
+        raise argparse.ArgumentTypeError("Invalid JSON: {}".format(path))
+
+
 def parse_args():
     """
     All of the boolean options have both an 'on' and an 'off' argument, which
@@ -438,6 +429,8 @@ def parse_args():
         "output_dir", action="store", help="Path to a folder to put output files in")
     parser.add_argument(
         "font_name", default="icon", action="store", help="Output file name *and* font name. Defaults to 'icon'.")
+
+    parser.add_argument('--character-mapping', action='store', type=json_file_arg_type, help='JSON file mapping SVG file name to the character its glyph occupies')
 
     parser.add_argument('-v', '--verbose', action='count', help="Add one for info logging, add another for debug logging")
 
@@ -493,11 +486,13 @@ def get_glyph_file_paths(input_dir, ignore):
 
 
 def main():
+    configure_logging(1)  # allow logging during parsing
     args = parse_args()
     configure_logging(args.verbose)
 
     scale_overrides = {name: float(amt) for (name, amt) in args.scale_one}
     translate_y_overrides = {name: float(amt) for (name, amt) in args.translate_y_one}
+    glyph_name_mapper = GlyphNameMapper(args.character_mapping or {})
 
     log.info("Scale overrides: {}".format(scale_overrides))
     log.info("Translate Y overrides: {}".format(translate_y_overrides))
@@ -512,12 +507,15 @@ def main():
 
     glyph_files = get_glyph_file_paths(args.input_dir, args.ignore)
 
+    def _get_glyph_name(friendly_name, i):
+        return htmlhex(ord(glyph_name_mapper.get_glyph_name(friendly_name)))
+
     # generate browser svg font
     gen_svg_font(
         glyph_files,
         os.path.join(args.output_dir, args.font_name + '.svg'),
         args.font_name,
-        glyph_name=lambda i:htmlhex(i + USER_AREA),
+        get_one_glyph_name=_get_glyph_name,
         scale=args.scale_all,
         translate_y=args.translate_y_all,
         scale_overrides=scale_overrides,
@@ -565,11 +563,13 @@ def main():
         log.info("Generated {}".format(eot_path))
 
     if args.designer:
+        def _get_designer_glyph_name(name, i):
+            return htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
         gen_svg_font(
             glyph_files,
             os.path.join(args.output_dir, designer_font_name + '.svg'),
             designer_font_name,
-            glyph_name=lambda i:htmlhex(i+ord(DESIGNER_FONT_START_CHAR)),
+            get_one_glyph_name=_get_designer_glyph_name,
             scale=args.scale_all,
             translate_y=args.translate_y_all,
             scale_overrides=scale_overrides,
@@ -580,6 +580,8 @@ def main():
         path = os.path.join(args.output_dir, designer_font_name + ".ttf")
         font.generate(path)
         log.info("Generated {}".format(path))
+
+    glyph_name_mapper.log_new_mappings_if_necessary()
 
 
 if __name__ == "__main__":
