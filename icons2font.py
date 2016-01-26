@@ -42,7 +42,7 @@ HEADER = """<?xml version="1.0" standalone="no"?>
 <glyph horiz-adv-x="0" />
 """
 
-GLYPH = """<glyph unicode="{0}" horiz-adv-x="1400" d="{1}" />\n\n"""
+GLYPH = """<glyph unicode="{glyph_name}" horiz-adv-x="{horz_size}" d="{path}" />\n\n"""
 
 FOOTER = """
 
@@ -332,7 +332,7 @@ def do_glyph(data, glyphname, svg, scale=1.0, translate_y=0.0):
         prev_op = op
 
     path = compile_path(commands)
-    svg.write(GLYPH.format(glyphname, path))
+    svg.write(GLYPH.format(glyph_name=glyphname, path=path, horz_size=local_gsize))
 
 
 def gen_svg_font(
